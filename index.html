@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crystal Forest Adventure</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        canvas { display: block; }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            text-shadow: 1px 1px 1px rgba(0,0,0,0.5);
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+        }
+        .control-btn {
+            width: 60px;
+            height: 60px;
+            background-color: rgba(255, 255, 255, 0.5);
+            border: none;
+            border-radius: 50%;
+            font-size: 24px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+        }
+        #dialog {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 80%;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div>Crystals: <span id="crystalCount">0</span>/5</div>
+        <div>Quest: <span id="currentQuest">Find the Wise Tree(A)</span></div>
+    </div>
+    <div id="dialog"></div>
+    <div id="controls">
+        <button class="control-btn" id="left">←</button>
+        <button class="control-btn" id="up">↑</button>
+        <button class="control-btn" id="down">↓</button>
+        <button class="control-btn" id="right">→</button>
+        <button class="control-btn" id="action">A</button>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(1, 1, 1);
+        scene.add(directionalLight);
+
+        // Ground
+        const groundTexture = new THREE.TextureLoader().load('https://threejsfundamentals.org/threejs/resources/images/checker.png');
+        groundTexture.wrapS = groundTexture.wrapT = THREE.RepeatWrapping;
+        groundTexture.repeat.set(10, 10);
+        const groundMaterial = new THREE.MeshStandardMaterial({ map: groundTexture });
+        const groundGeometry = new THREE.PlaneGeometry(100, 100);
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        scene.add(ground);
+
+        // Character
+        const characterGeometry = new THREE.BoxGeometry(1, 2, 1);
+        const characterMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+        const character = new THREE.Mesh(characterGeometry, characterMaterial);
+        character.position.set(0, 1, 0);
+        scene.add(character);
+
+        // Trees
+        const createTree = (x, z, isWiseTree = false) => {
+            const trunkGeometry = new THREE.CylinderGeometry(0.2, 0.2, 2, 8);
+            const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+            const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+            trunk.position.set(x, 1, z);
+
+            const leavesGeometry = new THREE.ConeGeometry(1, 2, 8);
+            const leavesMaterial = new THREE.MeshStandardMaterial({ color: isWiseTree ? 0xFFD700 : 0x228B22 });
+            const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
+            leaves.position.set(0, 2, 0);
+
+            const tree = new THREE.Group();
+            tree.add(trunk);
+            tree.add(leaves);
+            tree.position.set(x, 0, z);
+            scene.add(tree);
+            return tree;
+        };
+
+        // Add trees
+        const trees = [];
+        for (let i = 0; i < 20; i++) {
+            const x = Math.random() * 80 - 40;
+            const z = Math.random() * 80 - 40;
+            trees.push(createTree(x, z));
+        }
+
+        // Wise Tree (special tree for the quest)
+        const wiseTree = createTree(30, 30, true);
+        wiseTree.userData.isWiseTree = true;
+
+        // Crystals
+        const crystalGeometry = new THREE.OctahedronGeometry(0.5);
+        const crystalMaterial = new THREE.MeshStandardMaterial({ color: 0x00ffff, metalness: 0.7, roughness: 0.2 });
+        const crystals = [];
+
+        for (let i = 0; i < 5; i++) {
+            const crystal = new THREE.Mesh(crystalGeometry, crystalMaterial.clone());
+            crystal.position.set(
+                Math.random() * 80 - 40,
+                0.5,
+                Math.random() * 80 - 40
+            );
+            scene.add(crystal);
+            crystals.push(crystal);
+        }
+
+        camera.position.set(0, 5, 10);
+        camera.lookAt(character.position);
+
+        // Character movement
+        const moveSpeed = 0.2;
+        const keysPressed = {};
+
+        window.addEventListener('keydown', (event) => {
+            keysPressed[event.key.toLowerCase()] = true;
+        });
+
+        window.addEventListener('keyup', (event) => {
+            keysPressed[event.key.toLowerCase()] = false;
+        });
+
+        // Touch controls
+        const touchControls = {
+            up: document.getElementById('up'),
+            down: document.getElementById('down'),
+            left: document.getElementById('left'),
+            right: document.getElementById('right'),
+            action: document.getElementById('action')
+        };
+
+        Object.keys(touchControls).forEach(key => {
+            const btn = touchControls[key];
+            btn.addEventListener('touchstart', () => { keysPressed[key] = true; });
+            btn.addEventListener('touchend', () => { keysPressed[key] = false; });
+        });
+
+        // Game state
+        let crystalCount = 0;
+        let currentQuest = "Find the Wise Tree";
+        let puzzleSolved = false;
+
+        // UI elements
+        const crystalCountElement = document.getElementById('crystalCount');
+        const currentQuestElement = document.getElementById('currentQuest');
+        const dialogElement = document.getElementById('dialog');
+
+        function showDialog(message, duration = 3000) {
+            dialogElement.textContent = message;
+            dialogElement.style.display = 'block';
+            setTimeout(() => {
+                dialogElement.style.display = 'none';
+            }, duration);
+        }
+
+        function updateUI() {
+            crystalCountElement.textContent = crystalCount;
+            currentQuestElement.textContent = currentQuest;
+        }
+
+        // Puzzle: Unscramble the word
+        function presentPuzzle() {
+            const words = ["FOREST", "CRYSTAL", "ADVENTURE", "MAGIC", "QUEST"];
+            const word = words[Math.floor(Math.random() * words.length)];
+            const scrambled = word.split('').sort(() => Math.random() - 0.5).join('');
+            
+            const userGuess = prompt(`Unscramble this word to unlock the crystal's power: ${scrambled}`);
+            
+            if (userGuess && userGuess.toUpperCase() === word) {
+                showDialog("Correct! The crystal's power is yours!");
+                puzzleSolved = true;
+                currentQuest = "Return to the Wise Tree";
+                updateUI();
+            } else {
+                showDialog("That's not correct. Try again when you're ready.");
+            }
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Character movement
+            if (keysPressed['w'] || keysPressed['up']) character.position.z -= moveSpeed;
+            if (keysPressed['s'] || keysPressed['down']) character.position.z += moveSpeed;
+            if (keysPressed['a'] || keysPressed['left']) character.position.x -= moveSpeed;
+            if (keysPressed['d'] || keysPressed['right']) character.position.x += moveSpeed;
+
+            // Update camera position
+            camera.position.x = character.position.x;
+            camera.position.z = character.position.z + 10;
+            camera.lookAt(character.position);
+
+            // Check for collisions with crystals
+            crystals.forEach((crystal, index) => {
+                crystal.rotation.y += 0.02; // Rotate crystals
+                if (character.position.distanceTo(crystal.position) < 1) {
+                    console.log(`Collected crystal ${index + 1}`);
+                    scene.remove(crystal);
+                    crystals.splice(index, 1);
+                    crystalCount++;
+                    updateUI();
+                    showDialog("You found a crystal!");
+                    
+                    if (crystalCount === 5 && !puzzleSolved) {
+                        currentQuest = "Solve the Crystal Puzzle";
+                        updateUI();
+                        presentPuzzle();
+                    }
+                }
+            });
+
+            // Check for interaction with Wise Tree
+            if (character.position.distanceTo(wiseTree.position) < 3) {
+                if (keysPressed['e'] || keysPressed['action']) {
+                    if (currentQuest === "Find the Wise Tree") {
+                        showDialog("Wise Tree: 'Collect all 5 crystals to unlock their power!'");
+                        currentQuest = "Collect 5 Crystals";
+                        updateUI();
+                    } else if (currentQuest === "Return to the Wise Tree" && puzzleSolved) {
+                        showDialog("Congratulations! You've completed your quest and saved the Crystal Forest!");
+                        currentQuest = "Quest Completed!";
+                        updateUI();
+                    }
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
